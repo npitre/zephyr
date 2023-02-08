@@ -33,6 +33,27 @@ static inline bool fpu_is_dirty(void)
 	return fpu_state() == MSTATUS_FS_DIRTY;
 }
 
+static bool imprecise_dirty_tracking;
+
+static bool fpu_is_clean_otherwise_dirty(void)
+{
+	unsigned long state = fpu_state();
+
+	/*
+	 * Quoting the spec: "Implementations may choose to track the
+	 * dirtiness of the floating-point register state imprecisely by
+	 * reporting the state to be dirty even when it has not been
+	 * modified."
+	 */
+	if (state == MSTATUS_FS_DIRTY && !imprecise_dirty_tracking) {
+		TC_PRINT("note: FPU register dirtiness is \"imprecisely\" tracked.\n");
+		TC_PRINT("note: This is not optimal but allowed by the RISC-V spec.\n");
+		imprecise_dirty_tracking = true;
+	}
+
+	return state != MSTATUS_FS_OFF;
+}
+
 /*
  * Test for basic FPU access states.
  */
@@ -53,9 +74,7 @@ ZTEST(riscv_fpu_sharing, test_basics)
 
 	/* read the FP reg back which should re-enable the FPU */
 	__asm__ volatile ("fcvt.w.s %0, fa0, rtz" : "=r" (val));
-
-	/* the FPU should be enabled now but not dirty */
-	zassert_true(fpu_is_clean());
+	zassert_true(fpu_is_clean_otherwise_dirty());
 
 	/* we should have retrieved the same value */
 	zassert_true(val == 42, "got %d instead", val);
@@ -86,8 +105,8 @@ static void new_thread_check(const char *name)
 	__asm__ volatile ("fcvt.w.s %0, fa0, rtz" : "=r" (val));
 #endif
 
-	/* the FPU should be enabled now and not dirty */
-	zassert_true(fpu_is_clean(), "FPU not clean after read");
+	/* the FPU should be enabled now */
+	zassert_true(fpu_is_clean_otherwise_dirty());
 
 	/* the FP regs are supposed to be zero initialized */
 	zassert_true(val == 0, "got %d instead", val);
@@ -107,14 +126,14 @@ static void thread1_entry(void *p1, void *p2, void *p3)
 {
 	int32_t val;
 
+	new_thread_check("thread1");
+
 	/*
 	 * Test 1: Wait for thread2 to let us run and make sure we still own the
 	 * FPU afterwards.
 	 */
-	new_thread_check("thread1");
-	zassert_true(fpu_is_clean());
 	k_sem_take(&thread1_sem, K_FOREVER);
-	zassert_true(fpu_is_clean());
+	zassert_true(fpu_is_clean_otherwise_dirty());
 
 	/*
 	 * Test 2: Let thread2 do its initial thread checks. When we're
@@ -158,10 +177,14 @@ static void thread1_entry(void *p1, void *p2, void *p3)
 	 * previously written value). Because thread2 had dirtied it in
 	 * test 5, it is considered an active user. Scheduling thread2 will
 	 * make it own the FPU right away. However we won't preemptively own
-	 * it anymore afterwards as we didn't actively used it this time.
+	 * it anymore afterwards as we are not going to "actively" use it
+	 * this time.
 	 */
-	__asm__ volatile ("fcvt.w.s %0, fa1, rtz" : "=r" (val));
-	zassert_true(val == 42, "got %d instead", val);
+	if (!imprecise_dirty_tracking) {
+		/* attempt a read only if that won't make it dirty */
+		__asm__ volatile ("fcvt.w.s %0, fa1, rtz" : "=r" (val));
+		zassert_true(val == 42, "got %d instead", val);
+	}
 	zassert_true(fpu_is_clean());
 	k_sem_give(&thread2_sem);
 	k_sem_take(&thread1_sem, K_FOREVER);
@@ -195,7 +218,7 @@ static void thread2_entry(void *p1, void *p2, void *p3)
 	 * Test 3: Make sure we still own the FPU when scheduled back.
 	 */
 	k_sem_take(&thread2_sem, K_FOREVER);
-	zassert_true(fpu_is_clean());
+	zassert_true(fpu_is_clean_otherwise_dirty());
 	k_sem_give(&thread1_sem);
 
 	/*
@@ -220,9 +243,11 @@ static void thread2_entry(void *p1, void *p2, void *p3)
 	 */
 	k_sem_take(&thread2_sem, K_FOREVER);
 	zassert_true(fpu_is_clean());
-	__asm__ volatile ("fcvt.w.s %0, fa1" : "=r" (val));
-	zassert_true(val == 37, "got %d instead", val);
-	zassert_true(fpu_is_clean());
+	if (!imprecise_dirty_tracking) {
+		__asm__ volatile ("fcvt.w.s %0, fa1" : "=r" (val));
+		zassert_true(val == 37, "got %d instead", val);
+		zassert_true(fpu_is_clean());
+	}
 	k_sem_give(&thread1_sem);
 
 	/*
@@ -313,8 +338,10 @@ ZTEST(riscv_fpu_sharing, test_thread_vs_exc_interaction)
 	irq_offload(exception_context, WITH_FPU);
 	zassert_true((csr_read(mstatus) & MSTATUS_IEN) != 0, "IRQs should be enabled");
 	zassert_true(fpu_is_clean());
-	__asm__ volatile ("fcvt.w.s %0, fa1" : "=r" (val));
-	zassert_true(val == 654, "got %d instead", val);
+	if (!imprecise_dirty_tracking) {
+		__asm__ volatile ("fcvt.w.s %0, fa1" : "=r" (val));
+		zassert_true(val == 654, "got %d instead", val);
+	}
 
 	/*
 	 * Do the exception with FPU usage again, but this time our current
@@ -327,7 +354,7 @@ ZTEST(riscv_fpu_sharing, test_thread_vs_exc_interaction)
 
 	/* Make sure we still have proper context when accessing the FPU. */
 	__asm__ volatile ("fcvt.w.s %0, fa1" : "=r" (val));
-	zassert_true(fpu_is_clean());
+	zassert_true(!fpu_is_off());
 	zassert_true(val == 654, "got %d instead", val);
 }
 
