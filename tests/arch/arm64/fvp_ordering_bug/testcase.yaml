@@ -1,0 +1,12 @@
+tests:
+  arch.arm64.fvp_ordering_bug.lockfree:
+    tags:
+      - arm64
+      - smp
+      - memory_ordering
+    min_ram: 32
+    filter: CONFIG_SMP and CONFIG_MP_MAX_NUM_CPUS >= 4 and CONFIG_ARM64
+    integration_platforms:
+      - fvp_base_revc_2xaem/v8a/smp
+      - fvp_base_revc_2xaem/v9a/smp
+      - qemu_cortex_a53_smp
