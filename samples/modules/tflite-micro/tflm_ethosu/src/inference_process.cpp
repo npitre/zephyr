@@ -7,15 +7,14 @@
 #include "inference_process.hpp"
 
 #include <tensorflow/lite/micro/micro_mutable_op_resolver.h>
-#include <tensorflow/lite/micro/cortex_m_generic/debug_log_callback.h>
 #include <tensorflow/lite/micro/micro_log.h>
 #include <tensorflow/lite/micro/micro_interpreter.h>
 #include <tensorflow/lite/micro/micro_profiler.h>
 #include <tensorflow/lite/schema/schema_generated.h>
 
-#include <cmsis_compiler.h>
 #include <inttypes.h>
 #include <zephyr/kernel.h>
+#include <zephyr/cache.h>
 
 using namespace std;
 
@@ -49,16 +48,12 @@ DataPtr::DataPtr(void *_data, size_t _size) : data(_data), size(_size)
 
 void DataPtr::invalidate()
 {
-#if defined(__DCACHE_PRESENT) && (__DCACHE_PRESENT == 1U)
-	SCB_InvalidateDCache_by_Addr(reinterpret_cast<uint32_t *>(data), size);
-#endif
+	sys_cache_data_invd_range(data, size);
 }
 
 void DataPtr::clean()
 {
-#if defined(__DCACHE_PRESENT) && (__DCACHE_PRESENT == 1U)
-	SCB_CleanDCache_by_Addr(reinterpret_cast<uint32_t *>(data), size);
-#endif
+	sys_cache_data_flush_range(data, size);
 }
 
 InferenceJob::InferenceJob()
