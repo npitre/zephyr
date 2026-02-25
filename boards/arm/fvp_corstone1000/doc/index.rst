@@ -203,6 +203,13 @@ maintains cache coherency and no software cache maintenance is required
 Applications must also enable :kconfig:option:`CONFIG_HEAP_MEM_POOL_SIZE`
 (the driver allocates mutexes and semaphores at init time).
 
+The :zephyr:code-sample:`tflite-ethosu` sample runs a TFLM keyword-spotting
+inference on the NPU:
+
+.. code-block:: console
+
+   west build -b fvp_corstone1000/a320 samples/modules/tflite-micro/tflm_ethosu --sysbuild
+
 Known Limitations
 =================
 
