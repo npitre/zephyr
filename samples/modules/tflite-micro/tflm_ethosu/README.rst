@@ -27,19 +27,18 @@ Use `keyword_spotting_cnn_small_int8`_ model in this sample:
 
 .. _keyword_spotting_cnn_small_int8: https://github.com/Arm-Examples/ML-zoo/tree/master/models/keyword_spotting/cnn_small/model_package_tf/model_archive/TFLite/tflite_int8
 
-.. note:: The default Vela-compiled model is to target Arm Ethos-U55 NPU and 128 MAC
-   on MPS3 target. Because one model can add up to hundreds of KB, don't
-   attempt to add more models into code base for other targets.
+.. note:: Pre-compiled Vela models are included for **Ethos-U55 128 MAC**
+   (Corstone-300 / MPS3).  For other NPU variants, follow the steps below.
 
-1. Downloading the files below from `keyword_spotting_cnn_small_int8`_:
+1. Download the files below from `keyword_spotting_cnn_small_int8`_:
 
    - cnn_s_quantized.tflite
    - testing_input/input/0.npy
    - testing_output/identity/0.npy
 
-2. Optimizing the model for Arm Ethos-U NPU using Vela
+2. Optimize the model for Ethos-U using Vela
 
-   Assuming target Arm Ethos-U55 NPU and 128 MAC:
+   For Ethos-U55 128 MAC (Corstone-300):
 
    .. code-block:: console
 
@@ -49,36 +48,31 @@ Use `keyword_spotting_cnn_small_int8`_ model in this sample:
        --system-config Ethos_U55_High_End_Embedded \
        --memory-mode Shared_Sram
 
-3. Removing unnecessary header
+3. Install the Vela output
 
-   ``testing_input/input/0.npy`` and ``testing_output/0.npy`` have 128-byte header.
-   They must be removed for integration with this sample.
+   Copy the resulting ``cnn_s_quantized_vela.tflite`` into the
+   ``src/models/keyword_spotting_cnn_small_int8/`` directory, renaming it to
+   match the NPU variant (e.g. ``cnn_s_quantized_vela_u55_128.tflite``).
+   The build system converts this binary to a C array at build time via
+   ``generate_inc_file_for_target()``.
+
+   Add a corresponding ``elseif()`` block in ``CMakeLists.txt`` that selects
+   the new ``.tflite`` file based on a Kconfig symbol for your target.
+
+4. (Optional) Update test input/output data
+
+   ``testing_input/input/0.npy`` and ``testing_output/0.npy`` have 128-byte
+   headers that must be removed, then converted to C arrays:
 
    .. code-block:: console
 
        $ dd if=testing_input/input/0.npy of=testing_input/input/0_no-header.npy bs=1 skip=128
        $ dd if=testing_output/identity/0.npy of=testing_output/identity/0_no-header.npy bs=1 skip=128
+       $ xxd -c 16 -i testing_input/input/0_no-header.npy input.h
+       $ xxd -c 16 -i testing_output/identity/0_no-header.npy output.h
 
-4. Converting to C array
-
-   .. code-block:: console
-
-       $ xxd -c 16 -i cnn_s_quantized.tflite cnn_s_quantized.tflite.h
-       $ xxd -c 16 -i cnn_s_quantized_vela.tflite cnn_s_quantized_vela.tflite.h
-       $ xxd -c 16 -i testing_input/input/0_no-header.npy testing_input/input/0_no-header.npy.h
-       $ xxd -c 16 -i testing_output/identity/0_no-header.npy testing_output/identity/0_no-header.npy.h
-
-5. Synchronizing to this sample
-
-   Synchronize the files below to ``keyword_spotting_cnn_small_int8`` directory
-   in this sample:
-
-   - cnn_s_quantized_vela.tflite.h > model.h
-   - testing_input/input/0_no-header.npy.h > input.h
-   - testing_output/identity/0_no-header.npy.h > output.h
-
-   .. note:: To run non-Vela-compiled model (``CONFIG_TAINT_BLOBS_TFLM_ETHOSU=n``),
-      synchronize ``cnn_s_quantized.tflite.h`` instead.
+   Copy ``input.h`` and ``output.h`` into the
+   ``src/models/keyword_spotting_cnn_small_int8/`` directory.
 
 Building and running
 ********************
