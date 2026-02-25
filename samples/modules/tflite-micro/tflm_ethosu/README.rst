@@ -27,8 +27,14 @@ Use `keyword_spotting_cnn_small_int8`_ model in this sample:
 
 .. _keyword_spotting_cnn_small_int8: https://github.com/Arm-Examples/ML-zoo/tree/master/models/keyword_spotting/cnn_small/model_package_tf/model_archive/TFLite/tflite_int8
 
-.. note:: Pre-compiled Vela models are included for **Ethos-U55 128 MAC**
-   (Corstone-300 / MPS3).  For other NPU variants, follow the steps below.
+.. note:: Pre-compiled Vela models are included for:
+
+   - **Ethos-U55 128 MAC** (``CONFIG_SOC_SERIES_MPS3``) -- Corstone-300 / MPS3
+   - **Ethos-U85 256 MAC** (``CONFIG_ETHOS_U85_256``) -- Corstone-1000-A320 and
+     other U85-256 targets
+
+   Because each model adds ~77 KB, only these two configurations are
+   shipped.  For other NPU variants, follow the steps below.
 
 1. Download the files below from `keyword_spotting_cnn_small_int8`_:
 
@@ -46,6 +52,16 @@ Use `keyword_spotting_cnn_small_int8`_ model in this sample:
        --output-dir . \
        --accelerator-config ethos-u55-128 \
        --system-config Ethos_U55_High_End_Embedded \
+       --memory-mode Shared_Sram
+
+   For Ethos-U85 256 MAC (Corstone-1000-A320):
+
+   .. code-block:: console
+
+       $ vela cnn_s_quantized.tflite \
+       --output-dir . \
+       --accelerator-config ethos-u85-256 \
+       --system-config Ethos_U85_SYS_DRAM_Mid \
        --memory-mode Shared_Sram
 
 3. Install the Vela output
@@ -85,7 +101,7 @@ Add the tflite-micro module to your West manifest and pull it:
     west update
 
 This application can be built and run on any Arm Ethos-U NPU capable platform, such
-as Corstone(TM)-300 or Corstone-320.
+as Corstone(TM)-300, Corstone-320 or Corstone-1000-A320.
 
 Run target prerequisites
 ------------------------
@@ -101,6 +117,16 @@ your platform and, for Arm Ethos-U85 NPU, pass the NPU configuration to the CLI:
     # Arm Ethos-U85 (Corstone-320 FVP)
     export ARMFVP_BIN_PATH=/path/to/FVP_Corstone_SSE-320_<ver>/models/Linux64_GCC-<gcc>/
     export ARMFVP_EXTRA_FLAGS='-C;mps4_board.subsystem.ethosu.num_macs=2048'  # match chosen ETHOS_U85_* Kconfig
+
+    # Arm Ethos-U85 256 MAC (Corstone-1000-A320 FVP)
+    export ARMFVP_BIN_PATH=/path/to/FVP_Corstone-1000-A320/bin/
+
+.. note:: Corstone-1000-A320 builds the TF-M and TF-A secure boot chain, so they
+   require ``--sysbuild``:
+
+   .. code-block:: console
+
+       west build -b fvp_corstone1000/a320 samples/modules/tflite-micro/tflm_ethosu --sysbuild
 
 Build and run on the FVP
 ------------------------
