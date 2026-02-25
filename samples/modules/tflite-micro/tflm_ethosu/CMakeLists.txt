@@ -13,6 +13,23 @@ target_include_directories(app PRIVATE src/models/keyword_spotting_cnn_small_int
 
 target_sources(app PRIVATE src/main.cpp src/inference_process.cpp)
 
+# Generate model data from pre-compiled Vela binary at build time.
+# See README.rst for generating Vela-compiled models for other NPU variants.
+set(model_dir ${CMAKE_CURRENT_SOURCE_DIR}/src/models/keyword_spotting_cnn_small_int8)
+set(gen_dir ${ZEPHYR_BINARY_DIR}/include/generated/)
+if(CONFIG_TAINT_BLOBS_TFLM_ETHOSU)
+  if(CONFIG_SOC_SERIES_MPS3)
+    set(MODEL_BLOB ${model_dir}/cnn_s_quantized_vela_u55_128.tflite)
+  endif()
+  if(DEFINED MODEL_BLOB)
+    generate_inc_file_for_target(app ${MODEL_BLOB} ${gen_dir}/model_data.inc)
+  else()
+    message(FATAL_ERROR
+      "No pre-compiled Vela model for this target. "
+      "See README.rst for generating a Vela-compiled model blob.")
+  endif()
+endif()
+
 # Add platform specific linker source snippet
 zephyr_linker_sources_ifdef(CONFIG_SOC_SERIES_MPS3 SECTIONS linker.ld)
 zephyr_linker_sources_ifdef(CONFIG_SOC_SERIES_MPS4 SECTIONS linker.ld)
