@@ -1,0 +1,13 @@
+sample:
+  description: ExecuTorch inference with Arm Ethos-U NPU delegation
+  name: ExecuTorch Ethos-U NPU sample
+tests:
+  sample.modules.executorch_ethosu:
+    tags:
+      - NPU
+    modules:
+      - executorch
+    filter: dt_compat_enabled("arm,ethos-u")
+    build_only: true
+    integration_platforms:
+      - fvp_corstone1000/a320
