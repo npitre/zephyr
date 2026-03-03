@@ -1,17 +1,23 @@
 # SPDX-License-Identifier: Apache-2.0
 
-# Add SVE support if enabled, or explicitly disable it for ARMv9-A
+# Add SVE support if enabled, or explicitly disable it for ARMv9-A.
+#
+# When GCC_M_CPU is set for an ARMv9-A core (e.g. cortex-a710), it already
+# implies the correct architecture features including FP16 and SVE/noSVE.
+# Adding an explicit -march=armv9-a can break with older assemblers
+# (binutils < 2.42) that don't handle -march=armv9-a + FP16 scalar ops.
+# So only set GCC_M_ARCH when GCC_M_CPU is not already defined.
 if(CONFIG_ARM64_SVE)
   if(DEFINED GCC_M_ARCH)
     set(GCC_M_ARCH "${GCC_M_ARCH}+sve")
-  else()
+  elseif(NOT DEFINED GCC_M_CPU)
     set(GCC_M_ARCH "armv9-a+sve")
   endif()
 elseif(CONFIG_ARMV9_A)
   # ARMv9-A includes SVE by default, so explicitly disable it when not configured
   if(DEFINED GCC_M_ARCH)
     set(GCC_M_ARCH "${GCC_M_ARCH}+nosve")
-  else()
+  elseif(NOT DEFINED GCC_M_CPU)
     set(GCC_M_ARCH "armv9-a+nosve")
   endif()
 endif()
