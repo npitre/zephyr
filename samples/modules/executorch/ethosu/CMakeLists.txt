@@ -6,13 +6,15 @@ cmake_minimum_required(VERSION 3.24)
 set(CMAKE_SKIP_INSTALL_RULES ON CACHE BOOL "" FORCE)
 
 # --- Model embedding ---
-# Pass -DET_PTE_FILE_PATH=/path/to/model.pte to west build.
+# Pass -DET_PTE_FILE_PATH=/path/to/model.pte to west build, or use the
+# default pre-compiled model included in the sample.
 set(ET_PTE_FILE_PATH
-    "" CACHE FILEPATH "Path to the ExecuTorch .pte model to embed")
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/models/add_arm_delegate_ethos-u85-256.pte"
+    CACHE FILEPATH "Path to the ExecuTorch .pte model to embed")
 
-if(NOT ET_PTE_FILE_PATH)
+if(NOT ET_PTE_FILE_PATH OR NOT EXISTS "${ET_PTE_FILE_PATH}")
   message(FATAL_ERROR
-    "ET_PTE_FILE_PATH must point to the ExecuTorch .pte model to embed.\n"
+    "Model not found at ET_PTE_FILE_PATH: ${ET_PTE_FILE_PATH}\n"
     "  west build -- -DET_PTE_FILE_PATH=/path/to/model.pte")
 endif()
 
@@ -103,6 +105,35 @@ if(_GEN_PORTABLE_OPS)
   set(EXECUTORCH_OPS_LIB "cpu_portable_ops_lib")
 endif()
 
+# --- cortex_m quantize/dequantize ops for Cortex-A ---
+# Models exported with -q embed cortex_m::quantize_per_tensor and
+# cortex_m::dequantize_per_tensor ops at the delegation boundary.
+# The C++ kernels are architecture-agnostic (Helium SIMD is optional),
+# so we build just these two ops without pulling in the full cortex_m
+# backend (which depends on CMSIS-NN / Cortex-M).
+if(NOT TARGET cortex_m_qdq_kernels)
+  include(${EXECUTORCH_DIR}/tools/cmake/Utils.cmake)
+  include(${EXECUTORCH_DIR}/tools/cmake/Codegen.cmake)
+
+  set(_qdq_yaml ${CMAKE_CURRENT_SOURCE_DIR}/src/cortex_m_qdq_ops.yaml)
+  gen_selected_ops(LIB_NAME "cortex_m_qdq_ops_lib" OPS_SCHEMA_YAML "${_qdq_yaml}")
+  generate_bindings_for_kernels(
+    LIB_NAME "cortex_m_qdq_ops_lib" CUSTOM_OPS_YAML "${_qdq_yaml}")
+
+  add_library(cortex_m_qdq_kernels
+    ${EXECUTORCH_DIR}/backends/cortex_m/ops/op_quantize_per_tensor.cpp
+    ${EXECUTORCH_DIR}/backends/cortex_m/ops/op_dequantize_per_tensor.cpp)
+  target_link_libraries(cortex_m_qdq_kernels PRIVATE executorch kernels_util_all_deps)
+  target_include_directories(cortex_m_qdq_kernels PRIVATE
+    ${EXECUTORCH_DIR}/..
+    ${EXECUTORCH_DIR}/runtime/core/portable_type/c10)
+
+  gen_operators_lib(
+    LIB_NAME "cortex_m_qdq_ops_lib"
+    KERNEL_LIBS cortex_m_qdq_kernels
+    DEPS executorch)
+endif()
+
 # --- Application sources ---
 target_sources(app PRIVATE
   src/main.cpp
@@ -136,6 +167,9 @@ endif()
 target_link_libraries(app PRIVATE libexecutorch)
 if(EXECUTORCH_OPS_LIB)
   target_link_libraries(app PRIVATE ${EXECUTORCH_OPS_LIB})
+endif()
+if(TARGET cortex_m_qdq_ops_lib)
+  target_link_libraries(app PRIVATE cortex_m_qdq_ops_lib)
 endif()
 if(TARGET executorch_delegate_ethos_u)
   target_link_libraries(app PRIVATE executorch_delegate_ethos_u)

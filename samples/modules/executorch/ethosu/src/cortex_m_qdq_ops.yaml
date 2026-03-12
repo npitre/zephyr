@@ -1,0 +1,16 @@
+# Minimal cortex_m quantize/dequantize ops for Cortex-A targets.
+# These are the only cortex_m ops needed for models exported with -q
+# (quantization); all other ops are delegated to the Ethos-U NPU.
+# The C++ kernels are architecture-agnostic (Helium SIMD is optional).
+
+- func: cortex_m::quantize_per_tensor.out(Tensor input, float scale, int zero_point, int quant_min, int quant_max, ScalarType dtype, *, Tensor(a!) out) -> Tensor(a!)
+  variants: function
+  kernels:
+    - arg_meta: null
+      kernel_name: cortex_m::quantize_per_tensor_out
+
+- func: cortex_m::dequantize_per_tensor.out(Tensor input, float scale, int zero_point, int quant_min, int quant_max, ScalarType dtype, *, Tensor(a!) out) -> Tensor(a!)
+  variants: function
+  kernels:
+    - arg_meta: null
+      kernel_name: cortex_m::dequantize_per_tensor_out
