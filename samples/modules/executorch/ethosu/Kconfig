@@ -1,0 +1,26 @@
+# Copyright (c) 2026 BayLibre SAS
+# SPDX-License-Identifier: Apache-2.0
+
+source "Kconfig.zephyr"
+
+menu "ExecuTorch Ethos-U sample configuration"
+
+config EXECUTORCH_METHOD_ALLOCATOR_POOL_SIZE
+	int "Method allocator pool size in bytes"
+	default 2097152
+	depends on EXECUTORCH
+	help
+	  Size of the method allocator pool in bytes.  This memory holds the
+	  loaded method, memory-planned buffers, and input tensors.  Default
+	  is 2 MB which suits most small-to-medium models on Cortex-A with DDR.
+
+config EXECUTORCH_TEMP_ALLOCATOR_POOL_SIZE
+	int "Temporary allocator pool size in bytes"
+	default 65536
+	depends on EXECUTORCH
+	help
+	  Size of the temporary allocator pool in bytes.  Used for scratch
+	  memory during kernel and delegate execution, reset after each call.
+	  Default is 64 KB.
+
+endmenu
