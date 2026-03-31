@@ -31,12 +31,15 @@ endif()
 set(ET_PTE_FILE_PATH "${ET_PTE_FILE_PATH}"
     CACHE FILEPATH "" FORCE)
 
+find_package(Zephyr REQUIRED HINTS $ENV{ZEPHYR_BASE})
+
 # --- Selective operator build ---
 # Introspect the .pte to discover which portable ops are needed (if any).
 # Fully-delegated models produce an empty list, which is fine.
+# ZEPHYR_EXECUTORCH_MODULE_DIR is set by Zephyr's module discovery.
 execute_process(
   COMMAND python
-    "${CMAKE_CURRENT_LIST_DIR}/../../../../optional/modules/lib/executorch/codegen/tools/gen_oplist.py"
+    "${ZEPHYR_EXECUTORCH_MODULE_DIR}/codegen/tools/gen_oplist.py"
     --model_file_path=${ET_PTE_FILE_PATH}
     --output_path=${CMAKE_CURRENT_BINARY_DIR}/temp.yaml
   OUTPUT_VARIABLE CMD_RESULT
@@ -50,8 +53,6 @@ else()
   set(_GEN_PORTABLE_OPS OFF)
   set(EXECUTORCH_SELECT_OPS_MODEL "")
 endif()
-
-find_package(Zephyr REQUIRED HINTS $ENV{ZEPHYR_BASE})
 project(executorch_ethosu)
 
 find_package(Python3 COMPONENTS Interpreter REQUIRED)
