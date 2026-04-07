@@ -178,5 +178,13 @@ endif()
 if(TARGET ethosu_core_driver)
   target_link_libraries(app PRIVATE ethosu_core_driver)
 endif()
+if(TARGET xnnpack_backend)
+  target_link_libraries(app PRIVATE xnnpack_backend)
+  # Force the linker to pull in the XnnpackBackend object file so its
+  # static registration constructor runs.  Without this, the linker
+  # discards the unused object and the backend is never registered.
+  target_link_options(app PRIVATE
+    "LINKER:--undefined=_ZN10executorch8backends14XnnpackBackendC1Ev")
+endif()
 
 target_include_directories(app PRIVATE src ${CMAKE_CURRENT_BINARY_DIR})
