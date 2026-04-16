@@ -4,6 +4,12 @@ manifest:
       url-base: https://github.com/zephyrproject-rtos
   # zephyr-keep-sorted-start re(^\s+\- name:)
   projects:
+    - name: executorch
+      revision: zephyr-aarch64
+      path: optional/modules/lib/executorch
+      url: https://github.com/npitre/executorch
+      groups:
+        - optional
     - name: tflite-micro
       revision: 43b2a106a391dd8a099ac47f2ae858630a397264
       path: optional/modules/lib/tflite-micro
