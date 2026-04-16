@@ -5,33 +5,39 @@ cmake_minimum_required(VERSION 3.24)
 
 set(CMAKE_SKIP_INSTALL_RULES ON CACHE BOOL "" FORCE)
 
+find_package(Zephyr REQUIRED HINTS $ENV{ZEPHYR_BASE})
+
 # --- Model embedding ---
-# Pass -DET_PTE_FILE_PATH=/path/to/model.pte to west build, or use the
-# default pre-compiled model included in the sample.
-set(ET_PTE_FILE_PATH
-    "${CMAKE_CURRENT_SOURCE_DIR}/src/models/add_arm_delegate_ethos-u85-256.pte"
-    CACHE FILEPATH "Path to the ExecuTorch .pte model to embed")
+# With sysbuild, pass -Dethosu_ET_PTE_FILE_PATH=/path/to/model.pte
+# Without sysbuild, pass -DET_PTE_FILE_PATH=/path/to/model.pte
+# The sysbuild cache (SYSBUILD_NAME, image-prefixed variables) is only
+# available after find_package(Zephyr).
+if(TARGET sysbuild_cache)
+  get_property(_sb_pte TARGET sysbuild_cache
+               PROPERTY "${SYSBUILD_NAME}_ET_PTE_FILE_PATH")
+endif()
+if(_sb_pte)
+  set(ET_PTE_FILE_PATH "${_sb_pte}"
+      CACHE FILEPATH "Path to the ExecuTorch .pte model to embed" FORCE)
+else()
+  set(ET_PTE_FILE_PATH
+      "${CMAKE_CURRENT_SOURCE_DIR}/src/models/add_arm_delegate_ethos-u85-256.pte"
+      CACHE FILEPATH "Path to the ExecuTorch .pte model to embed")
+endif()
+
+# Resolve relative paths against the source directory.
+if(ET_PTE_FILE_PATH AND NOT IS_ABSOLUTE "${ET_PTE_FILE_PATH}")
+  get_filename_component(ET_PTE_FILE_PATH "${ET_PTE_FILE_PATH}" ABSOLUTE
+                         BASE_DIR "${CMAKE_CURRENT_SOURCE_DIR}")
+  set(ET_PTE_FILE_PATH "${ET_PTE_FILE_PATH}"
+      CACHE FILEPATH "Path to the ExecuTorch .pte model to embed" FORCE)
+endif()
 
 if(NOT ET_PTE_FILE_PATH OR NOT EXISTS "${ET_PTE_FILE_PATH}")
   message(FATAL_ERROR
     "Model not found at ET_PTE_FILE_PATH: ${ET_PTE_FILE_PATH}\n"
-    "  west build -- -DET_PTE_FILE_PATH=/path/to/model.pte")
+    "  west build -- -Dethosu_ET_PTE_FILE_PATH=/path/to/model.pte")
 endif()
-
-if(NOT IS_ABSOLUTE "${ET_PTE_FILE_PATH}")
-  get_filename_component(ET_PTE_FILE_PATH "${ET_PTE_FILE_PATH}" ABSOLUTE
-                         BASE_DIR "${CMAKE_CURRENT_SOURCE_DIR}")
-endif()
-
-if(NOT EXISTS "${ET_PTE_FILE_PATH}")
-  message(FATAL_ERROR
-    "Model not found: ${ET_PTE_FILE_PATH}")
-endif()
-
-set(ET_PTE_FILE_PATH "${ET_PTE_FILE_PATH}"
-    CACHE FILEPATH "" FORCE)
-
-find_package(Zephyr REQUIRED HINTS $ENV{ZEPHYR_BASE})
 
 # --- Selective operator build ---
 # Introspect the .pte to discover which portable ops are needed (if any).
