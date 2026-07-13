@@ -166,9 +166,30 @@ ZTEST(usage_api, test_all_stats_usage)
 	 * only grew by the sub-tick measurement tail between the stats3 sample
 	 * and the idle event. Scheduling here is tick aligned, so comparing in
 	 * the tick domain makes that tail vanish, no percentage tolerance needed.
+	 *
+	 * Debugging aid (see #113404): dump the raw and tick-domain samples so a
+	 * failure is self-explanatory and the peak growth can be correlated with
+	 * the clock/tick configuration.
 	 */
+	TC_PRINT("peak stats: hw=%u ticks=%d cyc_per_tick=%llu\n",
+		 sys_clock_hw_cycles_per_sec(), CONFIG_SYS_CLOCK_TICKS_PER_SEC,
+		 (unsigned long long)k_ticks_to_cyc_ceil64(1));
+	TC_PRINT("peak stats: peak3=%llu (%llu ticks) peak4=%llu (%llu ticks) growth=%llu cyc\n",
+		 (unsigned long long)stats3.peak_cycles,
+		 (unsigned long long)k_cyc_to_ticks_near64(stats3.peak_cycles),
+		 (unsigned long long)stats4.peak_cycles,
+		 (unsigned long long)k_cyc_to_ticks_near64(stats4.peak_cycles),
+		 (unsigned long long)(stats4.peak_cycles - stats3.peak_cycles));
 	zassert_equal(k_cyc_to_ticks_near64(stats4.peak_cycles),
-		      k_cyc_to_ticks_near64(stats3.peak_cycles), NULL);
+		      k_cyc_to_ticks_near64(stats3.peak_cycles),
+		      "peak changed across idle event: %llu -> %llu ticks "
+		      "(%llu -> %llu cyc, growth %llu cyc, cyc_per_tick %llu)",
+		      (unsigned long long)k_cyc_to_ticks_near64(stats3.peak_cycles),
+		      (unsigned long long)k_cyc_to_ticks_near64(stats4.peak_cycles),
+		      (unsigned long long)stats3.peak_cycles,
+		      (unsigned long long)stats4.peak_cycles,
+		      (unsigned long long)(stats4.peak_cycles - stats3.peak_cycles),
+		      (unsigned long long)k_ticks_to_cyc_ceil64(1));
 	zassert_true(stats4.peak_cycles == stats5.peak_cycles);
 
 	zassert_true(stats4.average_cycles > 0);
