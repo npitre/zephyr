@@ -76,6 +76,30 @@ message(STATUS "Corstone-1000: TF-A source: ${tfa_source_dir}")
 message(STATUS "Corstone-1000: TF-PSA-Crypto: ${tf_psa_crypto_dir}")
 message(STATUS "Corstone-1000: CMSIS_6: ${cmsis_6_module_dir}")
 
+# TF-M's BL1/BL2 image generation runs console scripts (bl1_1_create_bl1_2_image,
+# mcuboot_imagesign_wrapper) that only exist once TF-M's Python tools are
+# installed.  Install just the package with
+# --no-deps: the runtime dependencies are already provided by the environment
+# (the Zephyr CI container installs TF-M's tools/requirements.txt), so this avoids
+# any build-time network fetch.  Fall back to a user install for externally-
+# managed environments (e.g. a local system Python).
+find_package(Python3 COMPONENTS Interpreter QUIET)
+if(NOT Python3_EXECUTABLE)
+  set(Python3_EXECUTABLE python3)
+endif()
+execute_process(
+  COMMAND ${Python3_EXECUTABLE} -m pip install --quiet --no-deps ${tfm_source_dir}
+  RESULT_VARIABLE pip_rc)
+if(NOT pip_rc EQUAL 0)
+  execute_process(
+    COMMAND ${Python3_EXECUTABLE} -m pip install --quiet --no-deps --user ${tfm_source_dir}
+    RESULT_VARIABLE pip_rc)
+endif()
+if(NOT pip_rc EQUAL 0)
+  message(FATAL_ERROR "Corstone-1000: failed to install TF-M Python tools "
+    "(needed for BL1/BL2 image generation)")
+endif()
+
 # Output directories
 set(tfm_binary_dir ${CMAKE_BINARY_DIR}/tfm)
 set(tfa_binary_dir ${CMAKE_BINARY_DIR}/tfa)
