@@ -19,125 +19,44 @@
 #define TIMER_BASE_ADDR		DT_INST_REG_ADDR(0)
 #define TIMER_CLOCK_FREQUECY	DT_INST_PROP(0, clock_frequency)
 
-#define TICKS_PER_SEC		CONFIG_SYS_CLOCK_TICKS_PER_SEC
-#define CYCLES_PER_SEC		TIMER_CLOCK_FREQUECY
-#define CYCLES_PER_TICK		(CYCLES_PER_SEC / TICKS_PER_SEC)
-
 #if defined(CONFIG_TEST)
 const int32_t z_sys_timer_irq_for_test = DT_IRQN(DT_INST(0, xlnx_ttcps));
 #endif
-/*
- * CYCLES_NEXT_MIN must be large enough to ensure that the timer does not miss
- * interrupts.  This value was conservatively set using the trial and error
- * method, and there is room for improvement.
- */
-#define CYCLES_NEXT_MIN		(10000)
-#define CYCLES_NEXT_MAX		(XTTC_MAX_INTERVAL_COUNT)
 
 BUILD_ASSERT(TIMER_CLOCK_FREQUECY ==
 			CONFIG_SYS_CLOCK_HW_CYCLES_PER_SEC,
 	     "Configured system timer frequency does not match the TTC "
 	     "clock frequency in the device tree");
 
-BUILD_ASSERT(CYCLES_PER_SEC >= TICKS_PER_SEC,
-	     "Timer clock frequency must be greater than the system tick "
-	     "frequency");
+/*
+ * Free-running 32-bit counter with a MATCH_0 register that interrupts only
+ * when the counter steps onto it: a match value already behind the counter is
+ * missed until the counter wraps. That is the COMPARE_EXACT backend, and the
+ * core writes MATCH_0 through its verify loop.
+ */
+#define TIMER_CORE_BACKEND_COMPARE_EXACT
+#define TIMER_CORE_COUNTER_WIDTH 32
 
-BUILD_ASSERT((CYCLES_PER_SEC % TICKS_PER_SEC) == 0,
-	     "Timer clock frequency is not divisible by the system tick "
-	     "frequency");
-
-#ifdef CONFIG_TICKLESS_KERNEL
-static uint32_t last_cycles;
-#endif
-
-static uint32_t read_count(void)
+static inline uint32_t timer_driver_cycle_get(void)
 {
-	/* Read current counter value */
 	return sys_read32(TIMER_BASE_ADDR + XTTCPS_COUNT_VALUE_OFFSET);
 }
 
-static void update_match(uint32_t cycles, uint32_t match)
+static inline void timer_driver_set_compare(uint32_t cycles)
 {
-	uint32_t delta = match - cycles;
-
-	/* Ensure that the match value meets the minimum timing requirements */
-	if (delta < CYCLES_NEXT_MIN) {
-		match += CYCLES_NEXT_MIN - delta;
-	}
-
-	/* Write counter match value for interrupt generation */
-	sys_write32(match, TIMER_BASE_ADDR + XTTCPS_MATCH_0_OFFSET);
+	sys_write32(cycles, TIMER_BASE_ADDR + XTTCPS_MATCH_0_OFFSET);
 }
+
+#include "system_timer_generic.h"
 
 static void ttc_isr(const void *arg)
 {
-	uint32_t cycles;
-	uint32_t ticks;
-
 	ARG_UNUSED(arg);
 
-	/* Acknowledge interrupt */
-	sys_read32(TIMER_BASE_ADDR + XTTCPS_ISR_OFFSET);
+	/* Acknowledge interrupt: the status register clears on read */
+	(void)sys_read32(TIMER_BASE_ADDR + XTTCPS_ISR_OFFSET);
 
-	/* Read counter value */
-	cycles = read_count();
-
-#ifdef CONFIG_TICKLESS_KERNEL
-	/* Calculate the number of ticks since last announcement  */
-	ticks = (cycles - last_cycles) / CYCLES_PER_TICK;
-
-	/* Update last cycles count */
-	last_cycles = cycles;
-#else
-	/* Update counter match value for the next interrupt */
-	update_match(cycles, cycles + CYCLES_PER_TICK);
-
-	/* Advance tick count by 1 */
-	ticks = 1;
-#endif
-
-	/* Announce to the kernel*/
-	sys_clock_announce(ticks);
-}
-
-void sys_clock_set_timeout(uint32_t ticks, bool idle)
-{
-#ifdef CONFIG_TICKLESS_KERNEL
-	uint32_t cycles;
-	uint32_t next_cycles;
-
-	/* Read counter value */
-	cycles = read_count();
-
-	/* Calculate timeout counter value, clamped to the hardware max */
-	next_cycles = cycles + MIN((uint32_t)ticks * CYCLES_PER_TICK, CYCLES_NEXT_MAX);
-
-	/* Set match value for the next interrupt */
-	update_match(cycles, next_cycles);
-#endif
-}
-
-uint32_t sys_clock_elapsed(void)
-{
-#ifdef CONFIG_TICKLESS_KERNEL
-	uint32_t cycles;
-
-	/* Read counter value */
-	cycles = read_count();
-
-	/* Return the number of ticks since last announcement */
-	return (cycles - last_cycles) / CYCLES_PER_TICK;
-#else
-	/* Always return 0 for tickful operation */
-	return 0;
-#endif
-}
-
-uint32_t sys_clock_cycle_get_32(void)
-{
-	/* Return the current counter value */
-	return read_count();
+	timer_core_announce();
 }
 
 static int sys_clock_driver_init(void)
@@ -147,11 +66,6 @@ static int sys_clock_driver_init(void)
 	/* Stop timer */
 	sys_write32(XTTCPS_CNT_CNTRL_DIS_MASK,
 		    TIMER_BASE_ADDR + XTTCPS_CNT_CNTRL_OFFSET);
-
-#ifdef CONFIG_TICKLESS_KERNEL
-	/* Initialise internal states */
-	last_cycles = 0;
-#endif
 
 	/* Initialise timer registers */
 	sys_write32(XTTCPS_CNT_CNTRL_RESET_VALUE,
@@ -174,14 +88,8 @@ static int sys_clock_driver_init(void)
 	reg_val |= XTTCPS_CNT_CNTRL_MATCH_MASK;
 	sys_write32(reg_val, TIMER_BASE_ADDR + XTTCPS_CNT_CNTRL_OFFSET);
 
-	/* Set initial timeout */
-	reg_val = IS_ENABLED(CONFIG_TICKLESS_KERNEL) ?
-			CYCLES_NEXT_MAX : CYCLES_PER_TICK;
-	sys_write32(reg_val, TIMER_BASE_ADDR + XTTCPS_MATCH_0_OFFSET);
-
 	/* Connect timer interrupt */
 	IRQ_CONNECT(TIMER_IRQ, 0, ttc_isr, 0, 0);
-	irq_enable(TIMER_IRQ);
 
 	/* Enable timer interrupt */
 	reg_val = sys_read32(TIMER_BASE_ADDR + XTTCPS_IER_OFFSET);
@@ -192,6 +100,9 @@ static int sys_clock_driver_init(void)
 	reg_val = sys_read32(TIMER_BASE_ADDR + XTTCPS_CNT_CNTRL_OFFSET);
 	reg_val &= (~XTTCPS_CNT_CNTRL_DIS_MASK);
 	sys_write32(reg_val, TIMER_BASE_ADDR + XTTCPS_CNT_CNTRL_OFFSET);
+
+	timer_core_init();
+	irq_enable(TIMER_IRQ);
 
 	return 0;
 }
